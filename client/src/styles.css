@@ -448,3 +448,12 @@ h1, h2, h3 { font-family: var(--display); font-weight: 400; letter-spacing: 0.00
 .join-qr.large figcaption { font-size: clamp(16px, 1.6vw, 22px); }
 .pin-actions { display: flex; gap: 18px; flex-wrap: wrap; }
 .pin-card .pin-actions .text-button { margin: 0; }
+
+/* ---------- CSV import ---------- */
+.csv-tools { display: flex; gap: 12px; flex-wrap: wrap; margin: 18px 0 6px; }
+.csv-tools .button { font-size: 14px; padding: 9px 14px; box-shadow: 3px 3px 0 var(--ink); }
+.csv-hint { margin: 8px 0 16px !important; }
+.import-report { background: #fff; border: var(--line); box-shadow: 4px 4px 0 var(--yellow); padding: 12px 16px; margin: 14px 0; font-size: 13px; }
+.import-report.error { background: #ffe3e0; box-shadow: 4px 4px 0 var(--red); }
+.import-report p { margin: 0 0 8px; line-height: 1.5; }
+.import-report ul { margin: 0 0 10px; padding-left: 20px; line-height: 1.6; }

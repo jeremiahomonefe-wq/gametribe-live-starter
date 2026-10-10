@@ -40,6 +40,23 @@ A web-first, realtime multiplayer quiz starter. This is a development scaffold, 
 - A live game uses a copy of the quiz taken at launch.
 - Quizzes are saved in the browser (localStorage) until accounts and a database exist (PRD 1.0). They do not follow the user to another device.
 
+## Import questions from a CSV file
+
+In **Build a quiz**: **Import questions from CSV** creates a new quiz (named after the file) and saves it straight away, so it is in your list for future games. Inside a quiz, **Add from CSV** appends more questions, and **Download CSV** exports the quiz to edit in a spreadsheet. **Download template** gives a ready example (also in `docs/sample-questions.csv`).
+
+| Column | What goes in it |
+| --- | --- |
+| `question` | The question text |
+| `option_a` to `option_d` | 2 to 4 answers. Leave unused ones blank |
+| `correct` | `A`, `B`, `C`, `D` (or 1 to 4), or the exact text of the correct answer |
+| `seconds` | Time limit, 5 to 120. Blank means 15 |
+
+- Header names are flexible (`Question Text`, `Choice A`, `Correct Answer`, `Time Limit` all work). Comma, semicolon and tab separators are detected.
+- In Excel use Save As, then **CSV UTF-8**, so accents and symbols survive.
+- Up to 50 questions per quiz and 1 MB per file. Extra rows are left out and the report says so.
+- Rows with a problem are still imported, marked in red, so you fix them in the editor instead of losing them. A quiz cannot be hosted until every question is valid.
+- Quizzes are stored in the browser for now (see below), so they stay on the device and browser they were imported on.
+
 ## Put it online (one deploy)
 
 After `npm run build`, the Node server also serves the website, so players and the game share one address and no cross-origin settings are needed. The lobby shows a QR code and the host can copy a join link.
