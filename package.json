@@ -1,0 +1,22 @@
+{
+  "name": "gametribe-live-starter",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n SERVER,CLIENT -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm --workspace server run dev",
+    "dev:client": "npm --workspace client run dev",
+    "test": "npm --workspace server test",
+    "build": "npm --workspace client run build",
+    "build:preview": "npm --workspace client exec -- vite build --config vite.preview.config.js",
+    "start": "npm --workspace server run start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

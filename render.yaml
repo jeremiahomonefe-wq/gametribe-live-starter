@@ -1,0 +1,9 @@
+# Render blueprint: one web service serves the website and the game server.
+services:
+  - type: web
+    name: gametribe-live
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
