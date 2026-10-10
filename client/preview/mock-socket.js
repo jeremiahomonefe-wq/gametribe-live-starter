@@ -1,6 +1,7 @@
 // In-browser stand-in for socket.io-client + the Node server (preview build only).
 // It runs the real game-engine.js AND the real hub.js, so the preview behaves like the server.
-import { createGameEngine, DEMO_QUIZ } from '../../server/src/game-engine.js';
+import { createGameEngine } from '../../server/src/game-engine.js';
+import { DEFAULT_QUIZ } from '../../server/src/default-quiz.js';
 import { createHub } from '../../server/src/hub.js';
 
 const BOT_NAMES = ['Ovie', 'Tega', 'Efe', 'Mide', 'Kemi', 'Dami', 'Oghene', 'Ejiro'];
@@ -86,7 +87,7 @@ export const hub = {
       bot.on('game:state', (s) => {
         if (s.phase !== 'question' || answered.has(s.questionIndex)) return;
         answered.add(s.questionIndex);
-        const q = (lastQuiz || DEMO_QUIZ).questions[s.questionIndex] || { correctIndex: 0, options: ['a', 'b'] };
+        const q = (lastQuiz || DEFAULT_QUIZ).questions[s.questionIndex] || { correctIndex: 0, options: ['a', 'b'] };
         const pick = Math.random() < 0.65 ? q.correctIndex : Math.floor(Math.random() * q.options.length);
         setTimeout(() => bot.emit('player:answer', { pin, answerIndex: pick, questionIndex: s.questionIndex }), 1500 + Math.random() * 6000);
       });

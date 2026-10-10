@@ -1,9 +1,16 @@
-# Render blueprint: one web service serves the website and the game server.
+# Render blueprint: ONE web service that runs the game server AND serves the website.
+# Use exactly one instance. Games live in this process's memory, so scaling to several instances breaks them.
 services:
   - type: web
     name: gametribe-live
     runtime: node
-    plan: free
+    plan: free            # free plans sleep when idle and lose all games when they wake; use a paid always-on plan for real events
     buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Website address(es) allowed to connect, comma separated. Only needed if the website is hosted somewhere else (e.g. Vercel).
+      - key: CLIENT_ORIGIN
+        value: https://gametribe-live-starter.vercel.app

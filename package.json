@@ -14,7 +14,8 @@
     "test": "npm --workspace server test",
     "build": "npm --workspace client run build",
     "build:preview": "npm --workspace client exec -- vite build --config vite.preview.config.js",
-    "start": "npm --workspace server run start"
+    "start": "npm --workspace server run start",
+    "default-quiz": "node scripts/build-default-quiz.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

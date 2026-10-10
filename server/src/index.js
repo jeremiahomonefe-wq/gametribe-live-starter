@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
 import { createGameEngine } from './game-engine.js';
 import { createHub } from './hub.js';
+import { DEFAULT_QUIZ } from './default-quiz.js';
 
 const PORT = Number(process.env.PORT || 4000);
 // One or more website addresses allowed to connect, comma separated (e.g. your Vercel production and preview URLs).
@@ -41,6 +42,7 @@ const io = new Server(httpServer, {
 const hub = createHub({
   engine,
   instanceId: INSTANCE_ID,
+  defaultQuiz: DEFAULT_QUIZ,
   broadcast: (room, event, data) => io.to(room).emit(event, data),
   sendTo: (socketId, event, data) => io.to(socketId).emit(event, data)
 });

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { DEMO_QUIZ, QUIZ_LIMITS, validateQuiz } from '../../server/src/quiz-rules.js';
+import { QUIZ_LIMITS, validateQuiz } from '../../server/src/quiz-rules.js';
+import { DEFAULT_QUIZ } from '../../server/src/default-quiz.js';
 import { parseQuizCsv, quizToCsv, TEMPLATE_CSV } from '../../server/src/quiz-csv.js';
 
 // Quizzes are kept in this browser (localStorage) until accounts and a database exist (PRD 1.0).
@@ -130,10 +131,10 @@ export default function QuizEditor({ onBack, onHost, connected = true }) {
       {report && <ImportReport report={report} onClose={() => setReport(null)} />}
       <div className="quiz-list">
         <article className="quiz-card">
-          <div><strong>{DEMO_QUIZ.title}</strong><span>{DEMO_QUIZ.questions.length} questions · sample</span></div>
+          <div><strong>{DEFAULT_QUIZ.title}</strong><span>{DEFAULT_QUIZ.questions.length} questions · built in</span></div>
           <div className="quiz-actions">
-            <button className="button primary" disabled={!connected} onClick={() => hostChecked(DEMO_QUIZ)}>Host</button>
-            <button className="button" onClick={() => duplicate(DEMO_QUIZ)}>Copy to edit</button>
+            <button className="button primary" disabled={!connected} onClick={() => hostChecked(DEFAULT_QUIZ)}>Host</button>
+            <button className="button" onClick={() => duplicate(DEFAULT_QUIZ)}>Copy to edit</button>
           </div>
         </article>
         {quizzes.map((quiz) => {
@@ -151,7 +152,7 @@ export default function QuizEditor({ onBack, onHost, connected = true }) {
           </article>;
         })}
       </div>
-      {!quizzes.length && <p className="hint">No saved quizzes yet. Start one, or copy the sample to see how it is set up.</p>}
+      {!quizzes.length && <p className="hint">No saved quizzes yet. Start one, or copy the built-in quiz to see how it is set up.</p>}
       {status && <p className="hint" role="status">{status}</p>}
       <button className="button primary" onClick={() => { setDraft(blankQuiz()); setShowIssues(false); setStatus(''); }}>New quiz</button>
     </section>;

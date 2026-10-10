@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import QuizEditor from './QuizEditor.jsx';
 import { JoinQr, joinUrl } from './JoinQr.jsx';
+import { DEFAULT_QUIZ } from '../../server/src/default-quiz.js';
 
 // Dev: the server runs on :4000. Production: the website and the game server share one address.
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.DEV ? 'http://localhost:4000' : window.location.origin);
@@ -250,12 +251,12 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
         <h1>Your next big play date is live.</h1>
         <p className="hero-copy">Host a quiz for your crew, class or festival crowd. Players join with a PIN on their phones. No account, no fuss.</p>
         <div className="home-actions">
-          <button className="button primary" onClick={() => createGame()}>Host a demo quiz</button>
+          <button className="button primary" onClick={() => createGame(DEFAULT_QUIZ)}>Host the Game Tribe quiz</button>
           <button className="button secondary" onClick={() => setRole('editor')}>Build a quiz</button>
           <button className="button" onClick={goJoinPage}>Join a game</button>
         </div>
         <div className="feature-row"><div><b>1</b><span>Make a room</span></div><div><b>2</b><span>Share the PIN</span></div><div><b>3</b><span>Play together</span></div></div>
-        <p className="prototype-note">Prototype 0.1 · Uses a sample quiz · Game data resets when the server restarts</p>
+        <p className="prototype-note">The Game Tribe quiz has {DEFAULT_QUIZ.questions.length} ready questions: Bible, Nigeria, general knowledge, cartoons and games. Or build your own.</p>
       </div>
       <div className="hero-card" aria-hidden="true">
         <div className="card-label">Sample game PIN</div>

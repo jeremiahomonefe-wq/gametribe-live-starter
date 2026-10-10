@@ -6,7 +6,7 @@ export const HUB_EVENTS = [
   'host:start', 'host:reveal', 'host:next', 'host:end', 'player:answer'
 ];
 
-export function createHub({ engine, broadcast, sendTo, now = () => Date.now(), setTimer = setTimeout, maxAttempts = 12, windowMs = 30000, revealDelayMs = 2000, instanceId = '' }) {
+export function createHub({ engine, broadcast, sendTo, now = () => Date.now(), setTimer = setTimeout, maxAttempts = 12, windowMs = 30000, revealDelayMs = 2000, instanceId = '', defaultQuiz = undefined }) {
   const hosts = new Map();
   const members = new Map();
   const attempts = new Map();
@@ -74,7 +74,7 @@ export function createHub({ engine, broadcast, sendTo, now = () => Date.now(), s
   const handlers = {
     'host:create': (socket, data) => {
       try {
-        const created = engine.createSession({ quiz: data.quiz });
+        const created = engine.createSession({ quiz: data.quiz ?? defaultQuiz });
         engine.attachHost({ pin: created.pin, hostToken: created.hostToken, socketId: socket.id });
         socket.join(roomOf(created.pin));
         hosts.set(socket.id, { pin: created.pin, hostToken: created.hostToken });

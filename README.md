@@ -46,6 +46,12 @@ A web-first, realtime multiplayer quiz. It is ready for small live events and pi
 - A live game uses a copy of the quiz taken at launch.
 - Quizzes are saved in the browser (localStorage) until accounts and a database exist (PRD 1.0). They do not follow the user to another device.
 
+## The built-in questions
+
+The app ships with 40 ready questions (Bible, Nigeria, general knowledge, cartoons and games). **Host the Game Tribe quiz** on the home screen starts a game with them, and they also appear as the first card in **Build a quiz**, where **Copy to edit** makes your own editable version.
+
+The questions live in the app itself (`server/src/default-quiz.js`), so they never depend on a file, a database or a network request. To change them, edit `docs/default-questions.csv` and run `npm run default-quiz` (add `-- "My title"` to rename it), then rebuild. A test fails if the two ever disagree.
+
 ## Import questions from a CSV file
 
 In **Build a quiz**: **Import questions from CSV** creates a new quiz (named after the file) and saves it straight away, so it is in your list for future games. Inside a quiz, **Add from CSV** appends more questions, and **Download CSV** exports the quiz to edit in a spreadsheet. **Download template** gives a ready example (also in `docs/sample-questions.csv`).
@@ -81,6 +87,16 @@ The app now explains itself: after 4 seconds offline it shows a yellow notice wi
 - **"Cannot reach the game server" (it never connected):** the address is wrong, the server is off or asleep, or the server does not allow this website. Press **Check the server**: it should show `{"ok":true,...}`. If it does, add this website's address to `CLIENT_ORIGIN` on the server. On Vercel, set `VITE_SERVER_URL` to the game server's `https://` address and redeploy. The game server cannot run on Vercel itself.
 - **"Connection lost. Reconnecting..." (it was connected):** the app retries automatically and rejoins the same game. If the server restarted or a free host went to sleep, the game is gone (games live in memory); the app says so and returns to the start.
 - Free hosts (for example Render's free plan) sleep when idle and lose all games when they wake. Use a paid always-on instance for real events.
+
+## Fixing "The game server address ... is on a serverless host"
+
+That warning means the website and the game server are both on Vercel. Move the game server to Render (one always-on process):
+
+1. Push this folder to GitHub. In Render choose **New > Blueprint**, pick the repository, and apply. `render.yaml` is included and already sets the Node version and `CLIENT_ORIGIN`.
+2. When the deploy finishes, open `https://<your-render-address>/health`. You should see `{"ok":true,...}` with an `instance` code and a growing `uptimeSeconds`.
+3. **Simplest:** share the Render address itself. It serves the website and the game from one place, so Vercel and the settings below are not needed.
+4. **Or keep the Vercel website:** in Vercel, Project Settings, Environment Variables, add `VITE_SERVER_URL` = your Render `https://` address, then redeploy (the value is baked in at build time). In Render, make sure `CLIENT_ORIGIN` lists your Vercel address.
+5. Free Render plans sleep when idle and lose all games when they wake. Use a paid always-on instance for a real event and keep it at exactly one instance.
 
 ## "Host authorization failed" or "Game not found" in the middle of a game
 
