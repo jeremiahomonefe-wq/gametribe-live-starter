@@ -46,14 +46,15 @@ test('projector screen gets public state only and cannot run host commands', () 
   const seen = JSON.stringify(g.screen.log);
   assert.equal(seen.includes('hostToken'), false);
   assert.equal(seen.includes('reconnectToken'), false);
-  g.hub.handle(g.screen, 'host:start', g.auth);
+  g.hub.handle(g.screen, 'host:start', { pin: g.created.pin, hostToken: 'not-the-token' });
   assert.equal(g.last(g.screen, 'app:error').message, 'Host authorization failed.');
 });
 
 test('players cannot use host commands', () => {
   const g = startedGame();
-  g.hub.handle(g.player, 'host:end', g.auth);
+  g.hub.handle(g.player, 'host:end', { pin: g.created.pin, hostToken: 'not-the-token' });
   assert.equal(g.last(g.player, 'app:error').event, 'host:end');
+  assert.equal(g.last(g.player, 'game:state').phase, 'lobby', 'the game was not ended');
 });
 
 test('on reveal each player privately gets their own result', () => {
@@ -123,7 +124,7 @@ test('host recovery needs the real host token and never leaks it to others', () 
   const thief = g.socket('t');
   g.hub.handle(thief, 'host:reconnect', { pin: g.created.pin, hostToken: 'guess' });
   assert.match(g.last(thief, 'app:error').message, /host session not found/i);
-  g.hub.handle(thief, 'host:start', g.auth);
+  g.hub.handle(thief, 'host:start', { pin: g.created.pin, hostToken: 'guess' });
   assert.equal(g.last(thief, 'app:error').event, 'host:start');
   assert.equal(JSON.stringify(g.player.log).includes(g.created.hostToken), false);
   assert.equal(JSON.stringify(g.screen.log).includes(g.created.hostToken), false);
@@ -136,4 +137,40 @@ test('host:create accepts a valid custom quiz and rejects an invalid one', () =>
   assert.equal(e.last(ok, 'host:created').state.title, 'Mine');
   e.hub.handle(bad, 'host:create', { quiz: { title: 'Broken', questions: [] } });
   assert.match(e.last(bad, 'app:error').message, /at least one question/i);
+});
+
+test('a host whose connection changed keeps control, because the token proves who they are', () => {
+  const g = startedGame();
+  const newConnection = g.socket('h-new'); // the old connection dropped; the browser came back with a new id
+  g.hub.onDisconnect(g.host);
+  g.hub.handle(newConnection, 'host:start', g.auth); // no reconnect step needed first
+  assert.equal(g.last(g.player, 'game:state').phase, 'question');
+  assert.equal(g.last(g.player, 'game:state').hostConnected, true);
+  g.hub.handle(newConnection, 'host:reveal', g.auth);
+  assert.equal(g.last(newConnection, 'game:state').phase, 'reveal', 'and it now receives the game updates too');
+});
+
+test('a wrong token is refused with the plain authorization message', () => {
+  const g = startedGame();
+  g.hub.handle(g.host, 'host:start', { pin: g.created.pin, hostToken: 'wrong' });
+  const err = g.last(g.host, 'app:error');
+  assert.equal(err.message, 'Host authorization failed.');
+  assert.equal(err.code, undefined);
+});
+
+test('when the game is not on this server, everyone gets a clear "game not found" with a code', () => {
+  const e = env();
+  const hub2 = createHub({ engine: createGameEngine(), broadcast() {}, sendTo() {}, instanceId: 'abc123' });
+  const sock = { id: 's', log: [], join() {}, emit(ev, d) { this.log.push([ev, d]); } };
+  const lastErr = () => sock.log.filter(([ev]) => ev === 'app:error').at(-1)[1];
+  hub2.handle(sock, 'host:start', { pin: '123456', hostToken: 'x' });
+  assert.equal(lastErr().code, 'game_not_found');
+  assert.match(lastErr().message, /server abc123/);
+  hub2.handle(sock, 'player:answer', { pin: '123456', answerIndex: 0 });
+  assert.equal(lastErr().code, 'game_not_found');
+  hub2.handle(sock, 'player:reconnect', { pin: '123456', reconnectToken: 'x'.repeat(30) });
+  assert.equal(lastErr().code, 'game_not_found');
+  hub2.handle(sock, 'host:reconnect', { pin: '123456', hostToken: 'x' });
+  assert.equal(lastErr().code, 'game_not_found');
+  assert.ok(e, 'unused env keeps the helper imported');
 });

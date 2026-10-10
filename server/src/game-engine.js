@@ -256,5 +256,5 @@ export function createGameEngine({ now = () => Date.now() } = {}) {
 
   function hasSession(pin) { return sessions.has(String(pin)); }
 
-  return { createSession, joinSession, reconnectPlayer, startGame, submitAnswer, revealAnswer, nextQuestion, attachHost, detachHost, lockExpired, revealLocked, endGame, getPlayerResult, getPlayerSockets, getPublicState, removePlayer, hasSession };
+  return { sessionCount: () => sessions.size, createSession, joinSession, reconnectPlayer, startGame, submitAnswer, revealAnswer, nextQuestion, attachHost, detachHost, lockExpired, revealLocked, endGame, getPlayerResult, getPlayerSockets, getPublicState, removePlayer, hasSession };
 }

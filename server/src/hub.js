@@ -6,13 +6,15 @@ export const HUB_EVENTS = [
   'host:start', 'host:reveal', 'host:next', 'host:end', 'player:answer'
 ];
 
-export function createHub({ engine, broadcast, sendTo, now = () => Date.now(), setTimer = setTimeout, maxAttempts = 12, windowMs = 30000, revealDelayMs = 2000 }) {
+export function createHub({ engine, broadcast, sendTo, now = () => Date.now(), setTimer = setTimeout, maxAttempts = 12, windowMs = 30000, revealDelayMs = 2000, instanceId = '' }) {
   const hosts = new Map();
   const members = new Map();
   const attempts = new Map();
 
   const roomOf = (pin) => `game:${pin}`;
-  const fail = (socket, event, message) => socket.emit('app:error', { event, message: message || 'Something went wrong.' });
+  const fail = (socket, event, message, code) => socket.emit('app:error', { event, message: message || 'Something went wrong.', ...(code ? { code } : {}) });
+  // The one failure that means "your game is not on this server": it restarted, or you reached another copy.
+  const notHere = (socket, event) => fail(socket, event, `Game not found on this server${instanceId ? ` (server ${instanceId})` : ''}. The server may have restarted, or you reached a different copy of it.`, 'game_not_found');
 
   // Limits PIN guessing and token guessing per connection.
   function tooMany(socket) {
@@ -50,17 +52,23 @@ export function createHub({ engine, broadcast, sendTo, now = () => Date.now(), s
       }, revealDelayMs);
     }, Math.max(0, state.questionEndsAt - now()) + 40);
   }
-  function authHost(socket, data) {
-    const host = hosts.get(socket.id);
-    return host && host.pin === String(data.pin) && host.hostToken === data.hostToken ? host : null;
+  // The host token (a secret only the host's browser holds) is what proves who the host is, not the
+  // connection. So a host whose connection dropped and came back is still the host. Any valid command
+  // makes the sending connection the current host connection.
+  function adoptHost(socket, pin, hostToken) {
+    if (hosts.get(socket.id)?.pin === pin) return;
+    socket.join(roomOf(pin));
+    hosts.set(socket.id, { pin, hostToken });
+    engine.attachHost({ pin, hostToken, socketId: socket.id });
   }
   function hostCommand(socket, event, data, run, after) {
-    const host = authHost(socket, data);
-    if (!host) return fail(socket, event, 'Host authorization failed.');
-    const result = run({ pin: host.pin, hostToken: host.hostToken });
+    const pin = String(data.pin ?? '').trim();
+    if (!engine.hasSession(pin)) return notHere(socket, event);
+    const result = run({ pin, hostToken: data.hostToken });
     if (!result.ok) return fail(socket, event, result.error);
-    publish(host.pin);
-    after?.(host.pin);
+    adoptHost(socket, pin, data.hostToken);
+    publish(pin);
+    after?.(pin);
   }
 
   const handlers = {
@@ -77,6 +85,7 @@ export function createHub({ engine, broadcast, sendTo, now = () => Date.now(), s
     'host:reconnect': (socket, data) => {
       if (tooMany(socket)) return fail(socket, 'host:reconnect', 'Too many attempts. Wait a moment and try again.');
       const pin = String(data.pin ?? '').trim();
+      if (!engine.hasSession(pin)) return notHere(socket, 'host:reconnect');
       const result = engine.attachHost({ pin, hostToken: data.hostToken, socketId: socket.id });
       if (!result.ok) return fail(socket, 'host:reconnect', result.error);
       socket.join(roomOf(pin));
@@ -97,6 +106,7 @@ export function createHub({ engine, broadcast, sendTo, now = () => Date.now(), s
     'player:reconnect': (socket, data) => {
       if (tooMany(socket)) return fail(socket, 'player:reconnect', 'Too many attempts. Wait a moment and try again.');
       const pin = String(data.pin ?? '').trim();
+      if (!engine.hasSession(pin)) return notHere(socket, 'player:reconnect');
       const result = engine.reconnectPlayer({ pin, reconnectToken: data.reconnectToken, socketId: socket.id });
       if (!result.ok) return fail(socket, 'player:reconnect', result.error);
       socket.join(roomOf(pin));
@@ -124,6 +134,7 @@ export function createHub({ engine, broadcast, sendTo, now = () => Date.now(), s
     'host:end': (socket, data) => hostCommand(socket, 'host:end', data, (a) => engine.endGame(a), sendResults),
     'player:answer': (socket, data) => {
       const member = members.get(socket.id);
+      if (!engine.hasSession(String(data.pin ?? '').trim())) return notHere(socket, 'player:answer');
       if (!member || member.pin !== String(data.pin)) return fail(socket, 'player:answer', 'Join the game before answering.');
       const result = engine.submitAnswer({ ...member, socketId: socket.id, answerIndex: data.answerIndex, questionIndex: data.questionIndex });
       if (!result.ok) return fail(socket, 'player:answer', result.error);

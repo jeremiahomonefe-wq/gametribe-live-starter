@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "web": {
+      "root": ".",
+      "framework": "vite",
+      "buildCommand": "node scripts/require-server-url.mjs && npm run build",
+      "outputDirectory": "client/dist"
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": { "service": "web" } }
+  ]
+}

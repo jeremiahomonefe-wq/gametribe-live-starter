@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import QuizEditor from './QuizEditor.jsx';
 import { JoinQr, joinUrl } from './JoinQr.jsx';
 
 // Dev: the server runs on :4000. Production: the website and the game server share one address.
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.DEV ? 'http://localhost:4000' : window.location.origin);
+const SERVER_HOST = (() => { try { return new URL(SERVER_URL, 'http://localhost').hostname; } catch { return ''; } })();
+const LOOKS_SERVERLESS = /\.(vercel|netlify)\.app$/.test(SERVER_HOST);
 
 // The player page has its own address: /#join, or /#join=123456 to arrive with the PIN filled in.
 function joinRoute() {
@@ -23,6 +25,12 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
   const socket = useMemo(() => io(SERVER_URL, { autoConnect: false }), []);
   const [role, setRole] = useState(() => (initialRole === 'home' && routing && joinRoute() ? 'join' : initialRole));
   const [connected, setConnected] = useState(false);
+  const [serverInstance, setServerInstance] = useState('');
+  const serverRef = useRef('');
+  const serverChangeRef = useRef(null);
+  const [everConnected, setEverConnected] = useState(false);
+  const [linkError, setLinkError] = useState('');
+  const [showLinkNotice, setShowLinkNotice] = useState(false);
   const [error, setError] = useState('');
   const [game, setGame] = useState(null);
   const [host, setHost] = useState(null);
@@ -39,6 +47,8 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
     socket.connect();
     socket.on('connect', () => {
       setConnected(true);
+      setEverConnected(true);
+      setLinkError('');
       setError('');
       if (projectorPin) {
         setRole('projector');
@@ -62,7 +72,18 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
         sessionStorage.removeItem(sessionKey);
       }
     });
-    socket.on('disconnect', () => setConnected(false));
+    socket.on('disconnect', (reason) => {
+      setConnected(false);
+      setLinkError(String(reason || 'disconnected'));
+      if (reason === 'io server disconnect') socket.connect(); // the server closed us; the browser will not retry by itself
+    });
+    socket.on('server:ready', (info) => {
+      const next = info?.instance || '';
+      if (serverRef.current && next && serverRef.current !== next) serverChangeRef.current = { from: serverRef.current, to: next };
+      serverRef.current = next;
+      setServerInstance(next);
+    });
+    socket.on('connect_error', (err) => setLinkError(err?.message || 'could not connect'));
     socket.on('game:state', (state) => {
       setGame(state);
     });
@@ -95,8 +116,20 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
     socket.on('player:answer-accepted', () => setAnswerAccepted(true));
     socket.on('player:result', setResult);
     socket.on('app:error', (payload) => {
-      if (payload.event === 'player:reconnect') sessionStorage.removeItem(sessionKey);
-      if (payload.event === 'host:reconnect') sessionStorage.removeItem(hostKey);
+      // After a server restart the old game is gone. Say so and return to the start instead of showing a dead game.
+      if (payload.code === 'game_not_found' || payload.event === 'player:reconnect' || payload.event === 'host:reconnect') {
+        sessionStorage.removeItem(hostKey);
+        sessionStorage.removeItem(sessionKey);
+        setGame(null); setPlayer(null); setHost(null); setRole('home');
+        const change = serverChangeRef.current;
+        setError(`That game is no longer on the server. ${change ? `The server changed from ${change.from} to ${change.to}: it restarted, or you reached a different copy. ` : ''}Games live in one server's memory, so they end when it restarts. Start or join a new one.`);
+        return;
+      }
+      if (payload.event === 'projector:watch') setGame(null);
+      if (payload.event === 'player:join' && /PIN was not found/i.test(payload.message || '')) {
+        setError(`${payload.message} If the host's screen shows this PIN, you and the host are on different game servers${serverRef.current ? ` (you are on server ${serverRef.current})` : ''}. Compare the "server" code next to "Connected" on both screens: they must match.`);
+        return;
+      }
       setError(payload.message || 'Something went wrong.');
     });
     return () => {
@@ -104,6 +137,12 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
       socket.disconnect();
     };
   }, [socket]);
+
+  useEffect(() => {
+    if (connected) { setShowLinkNotice(false); return undefined; }
+    const timer = setTimeout(() => setShowLinkNotice(true), 4000);
+    return () => clearTimeout(timer);
+  }, [connected]);
 
   // Keep the page and the address in step, so the browser's back button and shared links work.
   useEffect(() => {
@@ -186,8 +225,21 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
     <main className="app-shell">
     <header className={`topbar topbar-${role}`}>
       <button className="brand" onClick={resetToHome} aria-label="Game Tribe Live home"><Logo small /></button>
-      <div className="connection"><span className={connected ? 'dot online' : 'dot'} />{connected ? 'Connected' : role === 'home' || role === 'join' ? 'Connecting...' : 'Connection lost. Reconnecting...'}</div>
+      <div className="connection"><span className={connected ? 'dot online' : 'dot'} />{connected ? 'Connected' : everConnected ? 'Connection lost. Reconnecting...' : showLinkNotice ? 'Cannot reach the server' : 'Connecting...'}{connected && serverInstance && <small className="server-id" title="Everyone in one game must show the same server code">server {serverInstance}</small>}</div>
     </header>
+
+    {LOOKS_SERVERLESS && <div className="notice warn" role="alert">
+      <div><strong>The game server address ({SERVER_HOST}) is on a serverless host.</strong> Vercel and Netlify cannot hold live games: connections drop, and players get "PIN not found" because each request can reach a different copy of the server. Run the game server on Render, Fly.io or Railway, set VITE_SERVER_URL to its https address, and redeploy.</div>
+    </div>}
+
+    {!connected && showLinkNotice && <div className="notice warn" role="status">
+      <div><strong>{everConnected ? 'Connection lost.' : 'Cannot reach the game server.'}</strong> {linkHint({ everConnected })}</div>
+      <div className="notice-actions">
+        <button className="mini" onClick={() => socket.connect()}>Try again</button>
+        {!everConnected && <a href={`${SERVER_URL}/health`} target="_blank" rel="noreferrer">Check the server</a>}
+      </div>
+      <small>Server: {SERVER_URL}{linkError ? ` · ${linkError}` : ''}</small>
+    </div>}
 
     {error && <div className="notice error" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
 
@@ -299,4 +351,18 @@ function ResultCard({ result, nickname, score }) {
     none: ['–', result ? 'NO ANSWER' : 'ANSWER REVEALED', result ? `You did not answer, ${nickname}.` : `Nice playing, ${nickname}!`, 'Look at the big screen for the answer and leaderboard.']
   }[tone];
   return <div className={`panel waiting-card result-card ${tone}`}><div className="result-badge" aria-hidden="true">{copy[0]}</div><div className="eyebrow">{copy[1]}</div><h2>{copy[2]}</h2><p>{copy[3]}</p><div className="waiting-count">Your score: {score}</div></div>;
+}
+
+// Plain-language help for the two situations people hit: never connected, and dropped after connecting.
+function linkHint({ everConnected }) {
+  if (!everConnected) {
+    if (typeof location !== 'undefined' && /\.vercel\.app$/.test(location.hostname) && SERVER_URL === location.origin) {
+      return 'This website is on Vercel, which cannot run the game server. Set VITE_SERVER_URL to your game server address and redeploy.';
+    }
+    if (typeof location !== 'undefined' && location.protocol === 'https:' && SERVER_URL.startsWith('http:')) {
+      return 'Browsers block an https website from reaching an http server. Use an https server address.';
+    }
+    return 'The server may be asleep, offline, or not allowing this website. Open the server check: it should show {"ok":true}. If it does, add this website address to CLIENT_ORIGIN on the server.';
+  }
+  return 'The app keeps retrying and will rejoin your game automatically. On a free host that went to sleep, the game may have ended.';
 }

@@ -49,7 +49,7 @@ class MockSocket {
   connect() {
     if (this.connected) return this;
     this.connected = true;
-    setTimeout(() => this.connected && this._deliver('connect'), 60);
+    setTimeout(() => { if (!this.connected) return; this._deliver('connect'); this._deliver('server:ready', { connected: true, instance: 'preview' }); }, 60);
     return this;
   }
   disconnect() {
