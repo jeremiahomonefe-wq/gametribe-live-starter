@@ -1,14 +1,35 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "services": {
-    "web": {
+
+    "gametribe-live": {
       "root": ".",
-      "framework": "vite",
-      "buildCommand": "node scripts/require-server-url.mjs && npm run build",
-      "outputDirectory": "client/dist"
+      "framework": "container",
+      "runtime": "container",
+      "buildCommand": "npm install && npm run build"
+    },
+    "client": {
+      "root": "client",
+      "framework": "vite"
+    },
+    "server": {
+      "root": "server",
+      "framework": "express"
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": { "service": "web" } }
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "server"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "gametribe-live"
+      }
+    }
+>>>>>>> 37a812bfabb208394764307bcbfb23d7af713c3b
   ]
 }
