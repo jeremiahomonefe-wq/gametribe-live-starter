@@ -42,6 +42,8 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
   const [answerAccepted, setAnswerAccepted] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [result, setResult] = useState(null);
+  const [lastQuiz, setLastQuiz] = useState(null); // lets the host start the same quiz again after a game
+  const [me, setMe] = useState(null); // this player's own score and rank, sent privately (phones do not receive the roster)
   const [confirmEnd, setConfirmEnd] = useState(false);
 
   useEffect(() => {
@@ -51,9 +53,10 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
       setEverConnected(true);
       setLinkError('');
       setError('');
-      if (projectorPin) {
+      const watching = watchPin || pinFromHash();
+      if (watching) {
         setRole('projector');
-        socket.emit('projector:watch', { pin: projectorPin });
+        socket.emit('projector:watch', { pin: watching });
         return;
       }
       try {
@@ -115,13 +118,17 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
     socket.on('player:joined', savePlayerSession);
     socket.on('player:reconnected', savePlayerSession);
     socket.on('player:answer-accepted', () => setAnswerAccepted(true));
-    socket.on('player:result', setResult);
+    socket.on('player:me', setMe);
+    socket.on('player:result', (r) => {
+      setResult(r);
+      setMe((m) => ({ ...(m || {}), questionIndex: r.questionIndex, answered: r.answered, score: r.score, rank: r.rank, total: r.total }));
+    });
     socket.on('app:error', (payload) => {
       // After a server restart the old game is gone. Say so and return to the start instead of showing a dead game.
       if (payload.code === 'game_not_found' || payload.event === 'player:reconnect' || payload.event === 'host:reconnect') {
         sessionStorage.removeItem(hostKey);
         sessionStorage.removeItem(sessionKey);
-        setGame(null); setPlayer(null); setHost(null); setRole('home');
+        setGame(null); setPlayer(null); setHost(null); setMe(null); setRole('home');
         const change = serverChangeRef.current;
         setError(`That game is no longer on the server. ${change ? `The server changed from ${change.from} to ${change.to}: it restarted, or you reached a different copy. ` : ''}Games live in one server's memory, so they end when it restarts. Start or join a new one.`);
         return;
@@ -178,6 +185,7 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
 
   function createGame(quiz) {
     setError('');
+    setLastQuiz(quiz ?? null);
     socket.emit('host:create', quiz ? { quiz } : {});
   }
   function joinGame(event) {
@@ -208,18 +216,27 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
     setRole('home');
     if (routing && joinRoute()) history.replaceState(null, '', location.pathname + location.search);
   }
+  // Leaving the read-only projector screen: drop the #projector address so a reload does not bring it back.
+  function leaveScreen() {
+    if (routing) history.replaceState(null, '', location.pathname + location.search);
+    setGame(null); setError(''); setRole('home');
+  }
+  function joinAnother() {
+    resetToHome();
+    goJoinPage();
+  }
   function resetToHome() {
     if (routing && joinRoute()) history.replaceState(null, '', location.pathname + location.search);
     sessionStorage.removeItem(sessionKey);
     sessionStorage.removeItem(hostKey);
-    setRole('home'); setGame(null); setHost(null); setPlayer(null); setError(''); setAnswerSent(false); setAnswerAccepted(false); setResult(null); setConfirmEnd(false);
+    setRole('home'); setGame(null); setHost(null); setPlayer(null); setError(''); setPinInput(''); setNickname(''); setAnswerSent(false); setAnswerAccepted(false); setResult(null); setMe(null); setConfirmEnd(false);
   }
 
   const question = game?.question;
   const topPlayers = game?.leaderboard?.slice(0, 10) || [];
   const inQuestion = game?.phase === 'question' || game?.phase === 'locked';
-  const myRank = player && game ? game.leaderboard.findIndex((p) => p.id === player.id) + 1 : 0;
-  const hasAnsweredCurrentQuestion = Boolean(player && game?.players?.some((p) => p.id === player.id && p.answered));
+  const myRank = me?.rank || 0;
+  const hasAnsweredCurrentQuestion = Boolean(me && game && me.questionIndex === game.questionIndex && me.answered);
 
   return <>
     <div className="ticker">Abraka • Play • Connect • Repeat</div>
@@ -293,6 +310,10 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
         {inQuestion && <button className="button primary full" onClick={() => hostAction('host:reveal')}>{game.phase === 'locked' ? 'Reveal answer (time is up)' : 'Close and reveal answer'}</button>}
         {game.phase === 'reveal' && <button className="button primary full" onClick={() => hostAction('host:next')}>{game.questionIndex + 1 >= game.totalQuestions ? 'Finish quiz' : 'Next question'}</button>}
         {game.phase === 'finished' && <div className="finished-banner">Quiz finished. Great game!</div>}
+        {game.phase === 'finished' && <div className="finish-actions">
+          <button className="button primary" onClick={resetToHome}>Back to home</button>
+          {lastQuiz && <button className="button secondary" onClick={() => createGame(lastQuiz)}>Host this quiz again</button>}
+        </div>}
         <button className="button secondary full" onClick={openProjector}>Open projector screen</button>
         {game.phase !== 'finished' && !confirmEnd && <button className="text-button end-link" onClick={() => setConfirmEnd(true)}>End game</button>}
         {confirmEnd && <div className="end-confirm" role="alertdialog" aria-label="End the game"><p>End the game for everyone? Scores so far become the final results.</p><div><button className="button primary" onClick={() => { hostAction('host:end'); setConfirmEnd(false); }}>End game</button><button className="button" onClick={() => setConfirmEnd(false)}>Keep playing</button></div></div>}
@@ -302,19 +323,20 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
       <div className="panel preview-panel"><div className="preview-top"><span className="live-label"><span className="dot online" /> LIVE PREVIEW</span><span className="pill">{game.phase.toUpperCase()}</span></div><GameScreen game={game} secondsLeft={secondsLeft} topPlayers={topPlayers} /><p className="small-muted center">This view updates in realtime. The projector screen is read-only.</p></div>
     </section>}
 
-    {role === 'projector' && !game && <section className="panel narrow center"><h2>Looking for the game...</h2><p>Waiting for PIN {projectorPin}. If this takes long, check the PIN on the host screen.</p></section>}
+    {role === 'projector' && !game && <section className="panel narrow center"><h2>Looking for the game...</h2><p>Waiting for PIN {watchPin || pinFromHash()}. If this takes long, check the PIN on the host screen.</p><button className="button" onClick={leaveScreen}>Back to start</button></section>}
     {role === 'projector' && game && <section className="projector-screen">
       <div className="projector-head"><Logo small /><div className="pin-pill">Join with PIN <b>{game.pin}</b></div></div>
       <GameScreen game={game} secondsLeft={secondsLeft} topPlayers={topPlayers} large />
       <p className="projector-footer">GAMES • BANTERS • HANGOUT • CONNECT</p>
+      {game.phase === 'finished' && <p className="projector-exit"><button className="text-button" onClick={leaveScreen}>Back to start</button></p>}
     </section>}
 
     {role === 'player' && game && <section className="player-game">
       <div className="player-game-top"><Logo small /><span className="player-pin">PIN {game.pin || player.pin}</span></div>
-      {!['question', 'locked', 'reveal', 'finished'].includes(game.phase) && <div className="panel waiting-card"><div className="waiting-icon">✓</div><div className="eyebrow">YOU'RE IN</div><h2>You're in the game, {player.nickname}!</h2><p>Keep your eyes on the big screen. The host will start shortly.</p><div className="waiting-count">{game.players.length} players joined</div></div>}
+      {!['question', 'locked', 'reveal', 'finished'].includes(game.phase) && <div className="panel waiting-card"><div className="waiting-icon">✓</div><div className="eyebrow">YOU'RE IN</div><h2>You're in the game, {player.nickname}!</h2><p>Keep your eyes on the big screen. The host will start shortly.</p><div className="waiting-count">{game.playerCount} players joined</div></div>}
       {inQuestion && question && <div className="player-question"><div className="question-meta"><span>QUESTION {question.index + 1} / {question.total}</span><span className="timer">{secondsLeft ?? '—'}s</span></div><div className="player-question-card"><h2>{question.prompt}</h2></div><div className="answer-grid">{question.options.map((option, index) => <button key={option} className={`answer-button answer-${index}`} disabled={answerSent || hasAnsweredCurrentQuestion || secondsLeft === 0} onClick={() => submitAnswer(index)}><span className="answer-letter">{String.fromCharCode(65 + index)}</span>{option}</button>)}</div>{(answerSent || hasAnsweredCurrentQuestion) && <div className="answer-status">{answerAccepted ? 'Answer received!' : hasAnsweredCurrentQuestion ? 'Your answer is already recorded.' : 'Submitting answer...'}</div>}{game.phase === 'locked' && !answerSent && !hasAnsweredCurrentQuestion && <div className="answer-status">Time is up. Waiting for the reveal.</div>}</div>}
-      {game.phase === 'reveal' && <ResultCard result={result} nickname={player.nickname} score={game.leaderboard.find((p) => p.id === player.id)?.score ?? 0} />}
-      {game.phase === 'finished' && <div className="panel waiting-card"><div className="eyebrow">GAME COMPLETE</div><h2>Thanks for playing, {player.nickname}!</h2><p>{myRank ? `You finished #${myRank} of ${game.leaderboard.length}. Your final score` : 'Your final score'}</p><div className="final-score">{game.leaderboard.find((p) => p.id === player.id)?.score ?? 0}</div><p>Play, connect and repeat.</p></div>}
+      {game.phase === 'reveal' && <ResultCard result={result} nickname={player.nickname} score={result?.score ?? me?.score ?? 0} />}
+      {game.phase === 'finished' && <div className="panel waiting-card"><div className="eyebrow">GAME COMPLETE</div><h2>Thanks for playing, {player.nickname}!</h2><p>{myRank ? `You finished #${myRank} of ${me?.total ?? game.playerCount}. Your final score` : 'Your final score'}</p><div className="final-score">{me?.score ?? 0}</div><p>Play, connect and repeat.</p><div className="finish-actions"><button className="button primary" onClick={resetToHome}>Back to home</button><button className="button secondary" onClick={joinAnother}>Join another game</button></div></div>}
     </section>}
 
     <footer className="footer"><span>Game Tribe Live</span><span>Play, connect and repeat.</span></footer>
@@ -323,8 +345,8 @@ export default function App({ sessionKey = 'gametribe:player-session', watchPin 
 }
 
 function GameScreen({ game, secondsLeft, topPlayers, large = false }) {
-  if (game.phase === 'lobby') return <div className={`game-screen lobby-screen ${large ? 'large' : ''}`}><div className="eyebrow">JOIN THE GAME</div><div className="lobby-join"><div className="big-pin">{game.pin}</div><JoinQr pin={game.pin} large={large} /></div><h2>Scan in. Tune in. Play.</h2><p>Scan the code, or enter the PIN on your phone and choose a nickname.</p><div className="lobby-players"><span className="dot online" /> {game.players.length} player{game.players.length === 1 ? '' : 's'} joined</div><div className="lobby-chips">{game.players.slice(0, 12).map((p) => <span key={p.id}>{p.nickname}</span>)}</div></div>;
-  if ((game.phase === 'question' || game.phase === 'locked') && game.question) return <div className={`game-screen question-screen ${large ? 'large' : ''}`}><div className="question-meta"><span>QUESTION {game.question.index + 1} / {game.question.total}</span><span className="timer">{secondsLeft ?? '—'}s</span></div><h2>{game.question.prompt}</h2><div className="projector-options">{game.question.options.map((option, i) => <div className={`projector-option option-${i}`} key={option}><span>{String.fromCharCode(65 + i)}</span>{option}</div>)}</div><p className="answer-count">{game.phase === 'locked' ? 'Time is up. ' : ''}{game.answeredCount} of {game.players.length} answered</p></div>;
+  if (game.phase === 'lobby') return <div className={`game-screen lobby-screen ${large ? 'large' : ''}`}><div className="eyebrow">JOIN THE GAME</div><div className="lobby-join"><div className="big-pin">{game.pin}</div><JoinQr pin={game.pin} large={large} /></div><h2>Scan in. Tune in. Play.</h2><p>Scan the code, or enter the PIN on your phone and choose a nickname.</p><div className="lobby-players"><span className="dot online" /> {game.playerCount} player{game.playerCount === 1 ? '' : 's'} joined</div><div className="lobby-chips">{game.players.slice(0, 12).map((p) => <span key={p.id}>{p.nickname}</span>)}</div></div>;
+  if ((game.phase === 'question' || game.phase === 'locked') && game.question) return <div className={`game-screen question-screen ${large ? 'large' : ''}`}><div className="question-meta"><span>QUESTION {game.question.index + 1} / {game.question.total}</span><span className="timer">{secondsLeft ?? '—'}s</span></div><h2>{game.question.prompt}</h2><div className="projector-options">{game.question.options.map((option, i) => <div className={`projector-option option-${i}`} key={option}><span>{String.fromCharCode(65 + i)}</span>{option}</div>)}</div><p className="answer-count">{game.phase === 'locked' ? 'Time is up. ' : ''}{game.answeredCount} of {game.playerCount} answered</p></div>;
   if (game.phase === 'reveal' && game.question) return <div className={`game-screen reveal-screen ${large ? 'large' : ''}`}><div className="eyebrow">THAT'S THE ANSWER</div><h2>{game.question.options[game.question.correctIndex]}</h2><p>Well played to everyone who got it right.</p><Leaderboard players={topPlayers} /></div>;
   return <div className={`game-screen reveal-screen ${large ? 'large' : ''}`}><div className="eyebrow">FINAL LEADERBOARD</div><h2>{winnerLine(topPlayers)}</h2><Leaderboard players={topPlayers} /></div>;
 }

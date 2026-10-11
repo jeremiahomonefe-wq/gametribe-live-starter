@@ -16,7 +16,7 @@ function env() {
   };
   const broadcast = (room, ev, data) => rooms.get(room)?.forEach((id) => sockets.get(id).emit(ev, data));
   const sendTo = (id, ev, data) => sockets.get(id)?.emit(ev, data);
-  const hub = createHub({ engine: createGameEngine({ now }), broadcast, sendTo, now, setTimer: (fn, ms) => timers.push({ fn, ms }) });
+  const hub = createHub({ engine: createGameEngine({ now }), broadcast, sendTo, now, setTimer: (fn, ms) => timers.push({ fn, ms }), stateIntervalMs: 0 });
   const last = (s, ev) => [...s.log].reverse().find(([e]) => e === ev)?.[1];
   return { hub, socket, timers, last, advance: (ms) => { t += ms; } };
 }

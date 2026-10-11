@@ -24,7 +24,33 @@ A web-first, realtime multiplayer quiz. It is ready for small live events and pi
 - A server-side database. Games live in server memory and end when the server restarts. Quizzes are stored only in the browser that created them, so they do not follow you to another device or browser.
 - Accounts and cloud-saved quizzes, moderation tools (such as removing a player), analytics, payments, and multi-server scaling.
 - Results export (a CSV of final scores) and a player-view preview inside the quiz builder.
-- Proof of 500-player capacity. A load test is a later milestone; do not market this as tested for 500 concurrent players.
+- Capacity proof on your real hosting. Simulated crowds of up to 1,000 players ran cleanly on one machine (see below), but nothing has been tested on a real hosting plan with real phones and venue networks. Run the load test against your own deployment before promising a number.
+
+## How many players can join?
+
+**Measured (simulated players, one machine, loopback network, one question with everyone answering):**
+
+| Players | Question reaches a player (median) | Answer acknowledged (median) | Data sent for the question | Server CPU* | Server memory |
+| --- | --- | --- | --- | --- | --- |
+| 100 | 21 ms | 2 ms | about 270 MB before the fix, a few MB after | 4% of a core | 93 MB |
+| 300 before the fix | 77 ms | **8,863 ms** | **7,074 MB** | 8% | 150 MB |
+| 300 after the fix | 9 ms | 1 ms | 5 MB | 5% | 98 MB |
+| 500 | 21 ms | 1 ms | 9 MB | 7% | 116 MB |
+| 1,000 (joined in 5 s, answered in 3 s) | 31 ms | 1 ms | 10 MB | 12% | 131 MB |
+
+*Shared with the test program itself, on a single core. No dropped connections or errors in any of these runs.
+
+**What the fix was:** the server used to send the full game state, including every player's score, to every phone after every join and every answer, so the data grew with the cube of the crowd (about 94 KB per message at 500 players). Now each screen gets only what it needs: the host everything, the projector the top 10 and a few names, phones just the question (about 0.4 KB) plus their own score and rank sent privately. Busy updates are batched (at most one per 250 ms per game), while phase changes (start, lock, reveal, next) are never delayed.
+
+**What this does not prove:** real phones, venue Wi-Fi and mobile networks, and your actual hosting plan's CPU were not part of the test. Realistic limits are likely to be the venue network (use mobile data for large crowds rather than one Wi-Fi) and the host's browser (the host receives the full roster; use a laptop for crowds over a few hundred).
+
+**Test your own deployment before an event:**
+
+```
+npm run load-test -- --players 300 --url https://<your-server-address>
+```
+
+Options: `--join-seconds` (how long the crowd takes to join, default 10) and `--answer-seconds` (default 6). Run it from your own computer so it uses the real internet path, and use a copy of the game server you will use at the event.
 
 ## Release 0.2 additions (from the PRD)
 
@@ -36,6 +62,8 @@ A web-first, realtime multiplayer quiz. It is ready for small live events and pi
 - Nicknames allow letters, numbers, spaces and `- _ . '`.
 - Joining, reconnecting and projector lookups are rate limited per connection (12 attempts per 30 seconds).
 - Event handling lives in `server/src/hub.js`, separate from Socket.IO, and is covered by tests.
+- After a game every screen has a way out: players get **Back to home** and **Join another game**, the host gets **Back to home** and **Host this quiz again**, and the projector screen has **Back to start**. Leaving clears the saved game, so a refresh does not drag anyone back into it.
+- Each screen receives only the state it needs (host, projector, phone), and busy updates are batched, so large crowds stay fast. See "How many players can join?".
 
 ## Host recovery and quiz builder
 

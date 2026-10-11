@@ -4,6 +4,17 @@ import { DEMO_QUIZ, validateQuiz } from './quiz-rules.js';
 
 export { DEMO_QUIZ };
 
+// What each kind of screen is allowed to receive. The full state grows with the crowd (about 190 bytes per
+// player), so only the host gets all of it. Phones need the question and their own score, not everyone else's.
+export function audienceState(full, audience) {
+  if (audience === 'host') return full;
+  const { players, leaderboard, ...rest } = full;
+  if (audience === 'screen') {
+    return { ...rest, players: players.slice(0, 40).map(({ id, nickname }) => ({ id, nickname })), leaderboard: leaderboard.slice(0, 10) };
+  }
+  return { ...rest, players: [], leaderboard: [] };
+}
+
 const normalizeNickname = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').slice(0, 20);
 const NICKNAME_PATTERN = /^[\p{L}\p{N} _.'-]+$/u;
 
@@ -57,6 +68,7 @@ export function createGameEngine({ now = () => Date.now() } = {}) {
       questionEndsAt: session.questionEndsAt,
       questionIndex: session.currentQuestionIndex,
       answeredCount: [...session.players.values()].filter((p) => p.answers.has(session.currentQuestionIndex)).length,
+      playerCount: session.players.size,
       totalQuestions: session.quiz.questions.length
     };
   }
@@ -209,12 +221,33 @@ export function createGameEngine({ now = () => Date.now() } = {}) {
   }
 
   // Private to the player: never part of the public state.
-  function getPlayerResult(pin, playerId) {
+  // Same order as the public leaderboard: score high to low, then nickname A to Z.
+  function rankingOf(session) {
+    const order = [...session.players.values()].sort((a, b) => b.score - a.score || a.nickname.localeCompare(b.nickname));
+    const rank = new Map();
+    order.forEach((p, i) => rank.set(p.id, i + 1));
+    return { rank, total: order.length };
+  }
+  function getRanking(pin) {
+    const session = getSession(pin);
+    return session ? rankingOf(session) : null;
+  }
+
+  // Private to the player. Phones do not receive the roster, so their own score and rank arrive here.
+  function getPlayerResult(pin, playerId, ranking) {
     const session = getSession(pin);
     const player = session?.players.get(playerId);
     if (!player || session.currentQuestionIndex < 0) return null;
     const answer = player.answers.get(session.currentQuestionIndex);
-    return { questionIndex: session.currentQuestionIndex, answered: Boolean(answer), correct: answer?.correct ?? false, points: answer?.points ?? 0 };
+    const r = ranking ?? rankingOf(session);
+    return { questionIndex: session.currentQuestionIndex, answered: Boolean(answer), correct: answer?.correct ?? false, points: answer?.points ?? 0, score: player.score, rank: r.rank.get(playerId), total: r.total };
+  }
+  function getPlayerMe(pin, playerId) {
+    const session = getSession(pin);
+    const player = session?.players.get(playerId);
+    if (!player) return null;
+    const r = rankingOf(session);
+    return { questionIndex: session.currentQuestionIndex, answered: player.answers.has(session.currentQuestionIndex), score: player.score, rank: r.rank.get(playerId), total: r.total };
   }
 
   function getPlayerSockets(pin) {
@@ -256,5 +289,5 @@ export function createGameEngine({ now = () => Date.now() } = {}) {
 
   function hasSession(pin) { return sessions.has(String(pin)); }
 
-  return { sessionCount: () => sessions.size, createSession, joinSession, reconnectPlayer, startGame, submitAnswer, revealAnswer, nextQuestion, attachHost, detachHost, lockExpired, revealLocked, endGame, getPlayerResult, getPlayerSockets, getPublicState, removePlayer, hasSession };
+  return { sessionCount: () => sessions.size, getRanking, getPlayerMe, createSession, joinSession, reconnectPlayer, startGame, submitAnswer, revealAnswer, nextQuestion, attachHost, detachHost, lockExpired, revealLocked, endGame, getPlayerResult, getPlayerSockets, getPublicState, removePlayer, hasSession };
 }
